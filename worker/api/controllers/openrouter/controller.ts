@@ -1,215 +1,160 @@
 /**
  * OpenRouter Controller
- * Handles: model sync, API key save/retrieve, model selection
+ * Handles: model sync, API key save/retrieve, model selection.
+ * Follows BaseController + RouteContext pattern.
  */
 
-import { Context } from 'hono';
-import { AppEnv } from '../../../types/appenv';
-import { eq, asc } from 'drizzle-orm';
-import { orModels, userSettings } from '../../../database/schema';
-import { syncOpenRouterModels } from '../../../services/openrouterSync';
-import { encryptApiKey, decryptApiKey, maskApiKey } from '../../../services/crypto';
+import { BaseController } from '../baseController';
+import { RouteContext } from '../../types/route-context';
+import { ApiResponse, ControllerResponse } from '../types';
+import { OpenRouterService } from '../../../database/services/OpenRouterService';
 import { createLogger } from '../../../logger';
 
 const logger = createLogger('OpenRouterController');
 
-export class OpenRouterController {
-
-    /**
-     * POST /api/openrouter/sync-models
-     * Fetches live model list from OR and upserts into D1.
-     * Requires valid OR key stored for this user.
-     */
-    static async syncModels(c: Context<AppEnv>) {
-        try {
-            const user = c.get('user');
-            const db = c.get('db');
-
-            // Get encrypted key from DB
-            const settings = await db
-                .select()
-                .from(userSettings)
-                .where(eq(userSettings.userId, user.id))
-                .get();
-
-            if (!settings?.orApiKeyEncrypted) {
-                return c.json({ error: 'No OpenRouter API key configured. Please save your key first.' }, 400);
-            }
-
-            const jwtSecret = c.env.JWT_SECRET;
-            const orApiKey = await decryptApiKey(settings.orApiKeyEncrypted, jwtSecret);
-
-            const result = await syncOpenRouterModels(db, orApiKey);
-
-            if (result.error) {
-                return c.json({ error: result.error }, 502);
-            }
-
-            return c.json({
-                success: true,
-                total: result.total,
-                added: result.added,
-                updated: result.updated,
-            });
-
-        } catch (error) {
-            logger.error('syncModels error:', error);
-            return c.json({ error: 'Internal server error' }, 500);
-        }
-    }
+export class OpenRouterController extends BaseController {
 
     /**
      * POST /api/openrouter/save-key
-     * Encrypts and saves OR API key for the current user.
      * Body: { apiKey: string }
      */
-    static async saveKey(c: Context<AppEnv>) {
+    static async saveKey(
+        request: Request,
+        env: Env,
+        _ctx: ExecutionContext,
+        context: RouteContext
+    ): Promise<ControllerResponse<ApiResponse<{ preview: string }>>> {
         try {
-            const user = c.get('user');
-            const db = c.get('db');
-            const body = await c.req.json<{ apiKey: string }>();
+            const user = context.user!;
+            const body = await request.json() as { apiKey?: string };
 
             if (!body.apiKey?.trim()) {
-                return c.json({ error: 'apiKey is required' }, 400);
+                return OpenRouterController.createErrorResponse('apiKey is required', 400);
             }
 
-            const jwtSecret = c.env.JWT_SECRET;
-            const encrypted = await encryptApiKey(body.apiKey.trim(), jwtSecret);
-            const preview = maskApiKey(body.apiKey.trim());
+            const service = new OpenRouterService(env);
+            const result = await service.saveApiKey(user.id, body.apiKey);
 
-            // Check if settings row exists for this user
-            const existing = await db
-                .select({ id: userSettings.id })
-                .from(userSettings)
-                .where(eq(userSettings.userId, user.id))
-                .get();
-
-            if (existing) {
-                await db
-                    .update(userSettings)
-                    .set({
-                        orApiKeyEncrypted: encrypted,
-                        orApiKeyPreview: preview,
-                        updatedAt: new Date(),
-                    })
-                    .where(eq(userSettings.userId, user.id));
-            } else {
-                await db.insert(userSettings).values({
-                    id: crypto.randomUUID(),
-                    userId: user.id,
-                    orApiKeyEncrypted: encrypted,
-                    orApiKeyPreview: preview,
-                });
-            }
-
-            return c.json({ success: true, preview });
-
+            return OpenRouterController.createSuccessResponse({
+                ...result,
+                message: 'API key saved successfully',
+            });
         } catch (error) {
             logger.error('saveKey error:', error);
-            return c.json({ error: 'Internal server error' }, 500);
+            return OpenRouterController.createErrorResponse('Failed to save API key', 500);
         }
     }
 
     /**
      * GET /api/openrouter/key-status
-     * Returns whether OR key is configured + masked preview.
-     * Never returns the actual key.
+     * Returns whether OR key is configured + masked preview. Never the real key.
      */
-    static async getKeyStatus(c: Context<AppEnv>) {
+    static async getKeyStatus(
+        _request: Request,
+        env: Env,
+        _ctx: ExecutionContext,
+        context: RouteContext
+    ): Promise<ControllerResponse<ApiResponse<{ configured: boolean; preview: string | null; updatedAt: Date | null }>>> {
         try {
-            const user = c.get('user');
-            const db = c.get('db');
+            const user = context.user!;
+            const service = new OpenRouterService(env);
+            const result = await service.getKeyStatus(user.id);
 
-            const settings = await db
-                .select({
-                    orApiKeyPreview: userSettings.orApiKeyPreview,
-                    updatedAt: userSettings.updatedAt,
-                })
-                .from(userSettings)
-                .where(eq(userSettings.userId, user.id))
-                .get();
-
-            return c.json({
-                configured: !!settings?.orApiKeyPreview,
-                preview: settings?.orApiKeyPreview ?? null,
-                updatedAt: settings?.updatedAt ?? null,
+            return OpenRouterController.createSuccessResponse({
+                ...result,
+                message: 'Key status retrieved',
             });
-
         } catch (error) {
             logger.error('getKeyStatus error:', error);
-            return c.json({ error: 'Internal server error' }, 500);
+            return OpenRouterController.createErrorResponse('Failed to get key status', 500);
+        }
+    }
+
+    /**
+     * POST /api/openrouter/sync-models
+     * Fetches live model list from OR and upserts into D1.
+     */
+    static async syncModels(
+        _request: Request,
+        env: Env,
+        _ctx: ExecutionContext,
+        context: RouteContext
+    ): Promise<ControllerResponse<ApiResponse<{ total: number; added: number; updated: number }>>> {
+        try {
+            const user = context.user!;
+            const service = new OpenRouterService(env);
+            const result = await service.syncModels(user.id);
+
+            if (result.error) {
+                return OpenRouterController.createErrorResponse(result.error, 400);
+            }
+
+            return OpenRouterController.createSuccessResponse({
+                total: result.total,
+                added: result.added,
+                updated: result.updated,
+                message: `Sync complete: ${result.added} added, ${result.updated} updated`,
+            });
+        } catch (error) {
+            logger.error('syncModels error:', error);
+            return OpenRouterController.createErrorResponse('Failed to sync models', 500);
         }
     }
 
     /**
      * GET /api/openrouter/models
-     * Returns all models from D1, grouped by provider.
-     * Query param: ?selectedOnly=true to get only selected models.
+     * Query: ?selectedOnly=true
      */
-    static async getModels(c: Context<AppEnv>) {
+    static async getModels(
+        request: Request,
+        env: Env,
+        _ctx: ExecutionContext,
+        _context: RouteContext
+    ): Promise<ControllerResponse<ApiResponse<{ models: unknown[]; grouped: Record<string, unknown[]>; total: number }>>> {
         try {
-            const db = c.get('db');
-            const selectedOnly = c.req.query('selectedOnly') === 'true';
+            const url = new URL(request.url);
+            const selectedOnly = url.searchParams.get('selectedOnly') === 'true';
 
-            let query = db.select().from(orModels);
-            if (selectedOnly) {
-                query = query.where(eq(orModels.isSelected, true));
-            }
-            const models = await query.orderBy(asc(orModels.provider), asc(orModels.name));
+            const service = new OpenRouterService(env);
+            const result = await service.getModels(selectedOnly);
 
-            // Group by provider
-            const grouped: Record<string, typeof models> = {};
-            for (const model of models) {
-                if (!grouped[model.provider]) {
-                    grouped[model.provider] = [];
-                }
-                grouped[model.provider].push(model);
-            }
-
-            return c.json({
-                models,
-                grouped,
-                total: models.length,
+            return OpenRouterController.createSuccessResponse({
+                ...result,
+                message: `${result.total} models retrieved`,
             });
-
         } catch (error) {
             logger.error('getModels error:', error);
-            return c.json({ error: 'Internal server error' }, 500);
+            return OpenRouterController.createErrorResponse('Failed to get models', 500);
         }
     }
 
     /**
      * POST /api/openrouter/models/selection
-     * Updates is_selected for a list of model IDs.
      * Body: { selectedIds: string[] }
      */
-    static async updateSelection(c: Context<AppEnv>) {
+    static async updateSelection(
+        request: Request,
+        env: Env,
+        _ctx: ExecutionContext,
+        _context: RouteContext
+    ): Promise<ControllerResponse<ApiResponse<{ selectedCount: number }>>> {
         try {
-            const db = c.get('db');
-            const body = await c.req.json<{ selectedIds: string[] }>();
+            const body = await request.json() as { selectedIds?: string[] };
 
             if (!Array.isArray(body.selectedIds)) {
-                return c.json({ error: 'selectedIds must be an array' }, 400);
+                return OpenRouterController.createErrorResponse('selectedIds must be an array', 400);
             }
 
-            // Reset all to false first
-            await db.update(orModels).set({ isSelected: false });
+            const service = new OpenRouterService(env);
+            const result = await service.updateSelection(body.selectedIds);
 
-            // Set selected ones to true
-            if (body.selectedIds.length > 0) {
-                for (const id of body.selectedIds) {
-                    await db
-                        .update(orModels)
-                        .set({ isSelected: true })
-                        .where(eq(orModels.id, id));
-                }
-            }
-
-            return c.json({ success: true, selectedCount: body.selectedIds.length });
-
+            return OpenRouterController.createSuccessResponse({
+                ...result,
+                message: `${result.selectedCount} models selected`,
+            });
         } catch (error) {
             logger.error('updateSelection error:', error);
-            return c.json({ error: 'Internal server error' }, 500);
+            return OpenRouterController.createErrorResponse('Failed to update selection', 500);
         }
     }
 }
