@@ -570,3 +570,49 @@ export type NewUserModelProvider = typeof userModelProviders.$inferInsert;
 
 export type Star = typeof stars.$inferSelect;
 export type NewStar = typeof stars.$inferInsert;
+
+// ========================================
+// OPENROUTER INTEGRATION
+// ========================================
+
+/**
+ * OpenRouter Models table - Live model catalog synced from OpenRouter API
+ * Updated on Settings page open. is_selected survives updates.
+ */
+export const orModels = sqliteTable('or_models', {
+    id: text('id').primaryKey(), // e.g. 'anthropic/claude-sonnet-4.5'
+    name: text('name').notNull(), // e.g. 'Claude Sonnet 4.5'
+    provider: text('provider').notNull(), // e.g. 'anthropic'
+    contextLength: integer('context_length'),
+    inputPrice: real('input_price'), // per token (OR value / 1_000_000)
+    outputPrice: real('output_price'), // per token (OR value / 1_000_000)
+    capabilities: text('capabilities').default('[]'), // JSON array: ["chat","vision"]
+    isSelected: integer('is_selected', { mode: 'boolean' }).default(false),
+    isFree: integer('is_free', { mode: 'boolean' }).default(false),
+    firstSeen: integer('first_seen', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    lastUpdated: integer('last_updated', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    providerIdx: index('or_models_provider_idx').on(table.provider),
+    isSelectedIdx: index('or_models_is_selected_idx').on(table.isSelected),
+    isFreeIdx: index('or_models_is_free_idx').on(table.isFree),
+}));
+
+/**
+ * User Settings table - Stores encrypted OR API key and other user-level settings
+ * Multi-user ready: one row per user
+ */
+export const userSettings = sqliteTable('user_settings', {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    orApiKeyEncrypted: text('or_api_key_encrypted'), // AES-GCM encrypted OR key
+    orApiKeyPreview: text('or_api_key_preview'), // e.g. 'sk-or-v1-...abc' for display
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    userIdx: uniqueIndex('user_settings_user_idx').on(table.userId),
+}));
+
+export type OrModel = typeof orModels.$inferSelect;
+export type NewOrModel = typeof orModels.$inferInsert;
+export type UserSettings = typeof userSettings.$inferSelect;
+export type NewUserSettings = typeof userSettings.$inferInsert;
