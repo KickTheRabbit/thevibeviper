@@ -15,6 +15,7 @@ import { setupTicketRoutes } from './ticketRoutes';
 import { Hono } from "hono";
 import { AppEnv } from "../../types/appenv";
 import { setupStatusRoutes } from './statusRoutes';
+import { setupOpenRouterRoutes } from './openrouterRoutes';
 
 export function setupRoutes(app: Hono<AppEnv>): void {
     // Health check route
@@ -63,7 +64,8 @@ export function setupRoutes(app: Hono<AppEnv>): void {
     
     // Model provider routes
     setupModelProviderRoutes(app);
-
+	setupOpenRouterRoutes(app);
+	
     // GitHub Exporter routes
     setupGitHubExporterRoutes(app);
 
