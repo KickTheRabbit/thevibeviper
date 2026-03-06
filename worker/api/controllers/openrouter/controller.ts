@@ -10,9 +10,8 @@ import { ApiResponse, ControllerResponse } from '../types';
 import { OpenRouterService } from '../../../database/services/OpenRouterService';
 import { createLogger } from '../../../logger';
 
-const logger = createLogger('OpenRouterController');
-
 export class OpenRouterController extends BaseController {
+    static logger = createLogger('OpenRouterController');
 
     /**
      * POST /api/openrouter/save-key
@@ -40,14 +39,13 @@ export class OpenRouterController extends BaseController {
                 message: 'API key saved successfully',
             });
         } catch (error) {
-            logger.error('saveKey error:', error);
+            OpenRouterController.logger.error('saveKey error:', error);
             return OpenRouterController.createErrorResponse('Failed to save API key', 500);
         }
     }
 
     /**
      * GET /api/openrouter/key-status
-     * Returns whether OR key is configured + masked preview. Never the real key.
      */
     static async getKeyStatus(
         _request: Request,
@@ -65,14 +63,13 @@ export class OpenRouterController extends BaseController {
                 message: 'Key status retrieved',
             });
         } catch (error) {
-            logger.error('getKeyStatus error:', error);
+            OpenRouterController.logger.error('getKeyStatus error:', error);
             return OpenRouterController.createErrorResponse('Failed to get key status', 500);
         }
     }
 
     /**
      * POST /api/openrouter/sync-models
-     * Fetches live model list from OR and upserts into D1.
      */
     static async syncModels(
         _request: Request,
@@ -96,7 +93,7 @@ export class OpenRouterController extends BaseController {
                 message: `Sync complete: ${result.added} added, ${result.updated} updated`,
             });
         } catch (error) {
-            logger.error('syncModels error:', error);
+            OpenRouterController.logger.error('syncModels error:', error);
             return OpenRouterController.createErrorResponse('Failed to sync models', 500);
         }
     }
@@ -123,7 +120,7 @@ export class OpenRouterController extends BaseController {
                 message: `${result.total} models retrieved`,
             });
         } catch (error) {
-            logger.error('getModels error:', error);
+            OpenRouterController.logger.error('getModels error:', error);
             return OpenRouterController.createErrorResponse('Failed to get models', 500);
         }
     }
@@ -153,7 +150,7 @@ export class OpenRouterController extends BaseController {
                 message: `${result.selectedCount} models selected`,
             });
         } catch (error) {
-            logger.error('updateSelection error:', error);
+            OpenRouterController.logger.error('updateSelection error:', error);
             return OpenRouterController.createErrorResponse('Failed to update selection', 500);
         }
     }
