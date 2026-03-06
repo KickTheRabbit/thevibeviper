@@ -174,5 +174,5 @@
         "SANDBOX_INSTANCE_TYPE": "standard-3"
     },
 	"workers_dev": false,
-	"preview_urls": false
+	"preview_urls": true
 }
