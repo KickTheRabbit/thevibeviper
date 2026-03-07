@@ -1175,7 +1175,7 @@ class ApiClient {
 		return this.request<AuthProvidersResponseData>('/api/auth/providers');
 	}
 
-	/**
+/**
 	 * Initiate OAuth flow (redirects to provider)
 	 */
 	initiateOAuth(provider: OAuthProvider, redirectUrl?: string): void {
@@ -1186,34 +1186,31 @@ class ApiClient {
 		if (redirectUrl) {
 			oauthUrl.searchParams.set('redirect_url', redirectUrl);
 		}
-
 		// Redirect to OAuth provider
 		window.location.href = oauthUrl.toString();
 	}
+
 	async saveOpenRouterKey(apiKey: string) {
-  		return this.post<{ success: boolean }>('/api/openrouter/save-key', { apiKey });
+		return this.request<{ success: boolean }>('/api/openrouter/save-key', { method: 'POST', body: { apiKey } });
 	}
 
 	async getOpenRouterKeyStatus() {
-		return this.get<{ hasKey: boolean; keyPreview?: string }>('/api/openrouter/key-status');
+		return this.request<{ hasKey: boolean; keyPreview?: string }>('/api/openrouter/key-status');
 	}
 
 	async syncOpenRouterModels() {
-		return this.post<{ count: number }>('/api/openrouter/sync-models', {});
+		return this.request<{ count: number }>('/api/openrouter/sync-models', { method: 'POST', body: {} });
 	}
 
 	async getOpenRouterModels() {
-		return this.get<{ models: any[] }>('/api/openrouter/models');
+		return this.request<{ models: any[] }>('/api/openrouter/models');
 	}
 
 	async saveOpenRouterSelection(selectedIds: string[]) {
-		return this.post<{ success: boolean }>('/api/openrouter/models/selection', { selectedIds });
+		return this.request<{ success: boolean }>('/api/openrouter/models/selection', { method: 'POST', body: { selectedIds } });
 	}
-
 }
-
 // Export singleton instance
 export const apiClient = new ApiClient();
-
 // Export class for testing/custom instances
 export { ApiClient };
