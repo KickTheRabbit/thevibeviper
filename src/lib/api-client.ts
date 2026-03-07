@@ -1190,6 +1190,26 @@ class ApiClient {
 		// Redirect to OAuth provider
 		window.location.href = oauthUrl.toString();
 	}
+	async saveOpenRouterKey(apiKey: string) {
+  		return this.post<{ success: boolean }>('/api/openrouter/save-key', { apiKey });
+	}
+
+	async getOpenRouterKeyStatus() {
+		return this.get<{ hasKey: boolean; keyPreview?: string }>('/api/openrouter/key-status');
+	}
+
+	async syncOpenRouterModels() {
+		return this.post<{ count: number }>('/api/openrouter/sync-models', {});
+	}
+
+	async getOpenRouterModels() {
+		return this.get<{ models: any[] }>('/api/openrouter/models');
+	}
+
+	async saveOpenRouterSelection(selectedIds: string[]) {
+		return this.post<{ success: boolean }>('/api/openrouter/models/selection', { selectedIds });
+	}
+
 }
 
 // Export singleton instance
