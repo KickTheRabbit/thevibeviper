@@ -278,8 +278,6 @@ export const appComments = sqliteTable('app_comments', {
     isEdited: integer('is_edited', { mode: 'boolean' }).default(false),
     isDeleted: integer('is_deleted', { mode: 'boolean' }).default(false),
     
-    // Removed likeCount and replyCount - use COUNT() queries with proper indexes instead
-    
     // Metadata
     createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
     updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
@@ -589,6 +587,7 @@ export const orModels = sqliteTable('or_models', {
     capabilities: text('capabilities').default('[]'), // JSON array: ["chat","vision"]
     isSelected: integer('is_selected', { mode: 'boolean' }).default(false),
     isFree: integer('is_free', { mode: 'boolean' }).default(false),
+    modelCreatedAt: integer('model_created_at', { mode: 'timestamp' }), // when OR published this model
     firstSeen: integer('first_seen', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
     lastUpdated: integer('last_updated', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
