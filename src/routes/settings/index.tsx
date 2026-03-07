@@ -69,11 +69,12 @@ interface OrModel {
   name: string;
   provider: string;
   context_length: number;
-  input_price: number;
-  output_price: number;
+  input_price: number | null;
+  output_price: number | null;
   capabilities: string;
   is_selected: boolean;
   is_free: boolean;
+  model_created_at: number | null; // Unix timestamp from OpenRouter
 }
 
 // ─── OpenRouter Section Component ─────────────────────────────────────────
@@ -212,9 +213,16 @@ function OpenRouterSection() {
 
   const selectedCount = Object.values(localSelection).filter(Boolean).length;
 
-  const formatPrice = (pricePerToken: number) => {
+  const formatPrice = (pricePerToken: number | null | undefined) => {
+    if (pricePerToken === null || pricePerToken === undefined || isNaN(pricePerToken)) return 'free';
+    if (pricePerToken === 0) return 'free';
     const per1M = pricePerToken * 1_000_000;
     return per1M === 0 ? 'free' : `$${per1M.toFixed(2)}/1M`;
+  };
+
+  const formatModelDate = (unixTs: number | null | undefined) => {
+    if (!unixTs) return null;
+    return new Date(unixTs * 1000).toLocaleDateString('de-DE', { year: 'numeric', month: 'short' });
   };
 
   return (
@@ -254,6 +262,7 @@ function OpenRouterSection() {
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Enter new key to replace..."
                   className="font-mono text-sm"
+                  autoComplete="new-password"
                 />
                 <Button
                   size="icon"
@@ -280,6 +289,7 @@ function OpenRouterSection() {
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="sk-or-v1-..."
                   className="font-mono text-sm"
+                  autoComplete="new-password"
                 />
                 <Button
                   size="icon"
@@ -441,6 +451,11 @@ function OpenRouterSection() {
                               )}
                               {model.context_length > 0 && (
                                 <span>{(model.context_length / 1000).toFixed(0)}k ctx</span>
+                              )}
+                              {formatModelDate(model.model_created_at) && (
+                                <span title="Verfügbar seit" className="text-text-tertiary">
+                                  seit {formatModelDate(model.model_created_at)}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -732,6 +747,15 @@ export default function SettingsPage() {
   };
 
   React.useEffect(() => {
+    if (user) {
+      loadActiveSessions();
+      loadModelConfigs();
+      loadApiKeys();
+    }
+  }, [user]);
+
+  // Load agent configs independently — not tied to OpenRouter state
+  React.useEffect(() => {
     apiClient
       .getModelDefaults()
       .then((response) => {
@@ -748,14 +772,6 @@ export default function SettingsPage() {
         console.error('Failed to load agent configurations:', error);
       });
   }, [formatAgentConfigName, getAgentConfigDescription]);
-
-  React.useEffect(() => {
-    if (user) {
-      loadActiveSessions();
-      loadModelConfigs();
-      loadApiKeys();
-    }
-  }, [user]);
 
   return (
     <div className="min-h-screen bg-bg-3 relative">

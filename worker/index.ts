@@ -10,6 +10,7 @@ import { isOriginAllowed } from './config/security';
 import { proxyToSandbox } from './services/sandbox/request-handler';
 import { handleGitProtocolRequest, isGitProtocolRequest } from './api/handlers/git-protocol';
 import { getAgentStub } from './agents';
+import { ensureOpenRouterTables } from './api/middleware/autoMigrate';
 
 // Durable Object and Service exports
 export { UserAppSandboxService } from './services/sandbox/sandboxSdkClient';
@@ -140,7 +141,9 @@ async function handleUserAppRequest(request: Request, env: Env): Promise<Respons
  */
 const worker = {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-        // logger.info(`Received request: ${request.method} ${request.url}`);
+        // Run auto-migration in background (non-blocking)
+        ctx.waitUntil(ensureOpenRouterTables(env));
+
 		// --- Pre-flight Checks ---
 
 		// 1. Critical configuration check: Ensure custom domain is set.
@@ -189,11 +192,6 @@ const worker = {
                 logger.info(`Origin: ${origin}, Preview Domain: ${previewDomain}`);
 
                 return proxyToAiGateway(request, env, ctx);
-				// if (origin && origin.endsWith(`.${previewDomain}`)) {
-                //     return proxyToAiGateway(request, env, ctx);
-                // }
-                // logger.warn(`Access denied. Invalid origin: ${origin}, preview domain: ${previewDomain}`);
-                // return new Response('Access denied. Invalid origin.', { status: 403 });
 			}
 
 			// Handle all API requests with the main Hono application.
