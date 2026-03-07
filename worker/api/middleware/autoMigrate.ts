@@ -10,6 +10,7 @@ export async function ensureOpenRouterTables(env: Env): Promise<void> {
     if (migrationDone) return;
 
     try {
+        // Create tables (safe to run multiple times)
         await env.DB.batch([
             env.DB.prepare(`
                 CREATE TABLE IF NOT EXISTS or_models (
@@ -41,11 +42,17 @@ export async function ensureOpenRouterTables(env: Env): Promise<void> {
                 CREATE UNIQUE INDEX IF NOT EXISTS user_settings_user_idx
                 ON user_settings(user_id)
             `),
-            // Add model_created_at column if upgrading from earlier version
-            env.DB.prepare(`
-                ALTER TABLE or_models ADD COLUMN model_created_at INTEGER
-            `).catch(() => { /* column already exists, ignore */ }),
         ]);
+
+        // ALTER TABLE must run separately — D1PreparedStatement has no .catch()
+        // Silently ignore if column already exists (upgrade path)
+        try {
+            await env.DB.prepare(
+                `ALTER TABLE or_models ADD COLUMN model_created_at INTEGER`
+            ).run();
+        } catch {
+            // Column already exists — safe to ignore
+        }
 
         migrationDone = true;
     } catch (error) {
