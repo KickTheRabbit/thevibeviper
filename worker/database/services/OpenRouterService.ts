@@ -16,6 +16,7 @@ interface ORModelRaw {
     id: string;
     name: string;
     context_length?: number;
+    created?: number; // Unix timestamp from OpenRouter
     pricing?: {
         prompt?: string;
         completion?: string;
@@ -186,6 +187,14 @@ export class OpenRouterService extends BaseService {
         return prompt === 0 && completion === 0;
     }
 
+    private parsePrice(value: string | undefined): number | null {
+        if (!value) return null;
+        const parsed = parseFloat(value);
+        if (isNaN(parsed)) return null;
+        // OR returns price per token — store as-is, display as per 1M
+        return parsed;
+    }
+
     async syncModels(userId: string): Promise<SyncResult> {
         try {
             const orApiKey = await this.getDecryptedApiKey(userId);
@@ -211,12 +220,9 @@ export class OpenRouterService extends BaseService {
                 const provider = this.extractProvider(model.id);
                 const capabilities = this.extractCapabilities(model);
                 const isFree = this.isFreeModel(model);
-                const inputPrice = model.pricing?.prompt
-                    ? parseFloat(model.pricing.prompt) / 1_000_000
-                    : null;
-                const outputPrice = model.pricing?.completion
-                    ? parseFloat(model.pricing.completion) / 1_000_000
-                    : null;
+                const inputPrice = this.parsePrice(model.pricing?.prompt);
+                const outputPrice = this.parsePrice(model.pricing?.completion);
+                const modelCreatedAt = model.created ? new Date(model.created * 1000) : null;
 
                 const existing = await this.database
                     .select({ id: orModels.id })
@@ -235,6 +241,7 @@ export class OpenRouterService extends BaseService {
                             outputPrice,
                             capabilities,
                             isFree,
+                            modelCreatedAt,
                             lastUpdated: new Date(),
                         })
                         .where(eq(orModels.id, model.id));
@@ -250,6 +257,7 @@ export class OpenRouterService extends BaseService {
                         capabilities,
                         isFree,
                         isSelected: false,
+                        modelCreatedAt,
                         firstSeen: new Date(),
                         lastUpdated: new Date(),
                     });
@@ -261,7 +269,7 @@ export class OpenRouterService extends BaseService {
             return { total: models.length, added, updated };
 
         } catch (error) {
-            this.logger.error('OR sync failed:', error);
+            this.logger.error('OR sync failed:', error instanceof Error ? error.message : String(error));
             return {
                 total: 0, added: 0, updated: 0,
                 error: error instanceof Error ? error.message : 'Unknown error',
