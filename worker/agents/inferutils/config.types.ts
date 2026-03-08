@@ -379,11 +379,6 @@ export interface AgentConstraintConfig {
     enabled: boolean;
 }
 
-export interface AgentConstraintConfig {
-    allowedModels: Set<AIModels>;
-    enabled: boolean;
-}
-
 export interface ModelConfig {
     name: AIModels | string;
     reasoning_effort?: ReasoningEffort;
@@ -475,4 +470,28 @@ export function isValidAIModel(value: string): value is AIModels {
 export function toAIModel(value: string | null | undefined): AIModels | undefined {
   if (!value) return undefined;
   return isValidAIModel(value) ? value : undefined;
+}
+
+/**
+ * Resolves model config for any model string.
+ * Known models → static config map.
+ * Unknown OR models (e.g. "openrouter/google/gemini-2.0-flash-001") → dynamic fallback config.
+ */
+export function resolveModelConfig(modelName: string): AIModelConfig {
+    // Known static model
+    if (isValidAIModel(modelName)) {
+        return AI_MODEL_CONFIG[modelName];
+    }
+    // Dynamic OR model — build fallback config
+    const provider = modelName.startsWith('openrouter/')
+        ? 'openrouter'
+        : modelName.split('/')[0] ?? 'openrouter';
+    return {
+        name: modelName,
+        size: ModelSize.REGULAR,
+        provider,
+        creditCost: 0,
+        contextSize: 128000,
+        directOverride: true,
+    };
 }
