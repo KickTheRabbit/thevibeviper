@@ -44,7 +44,6 @@ interface ConfigModalProps {
   isTesting: boolean;
 }
 
-
 // Helper to extract provider from model name (e.g., "openai/gpt-4" -> "openai")
 const getProviderFromModel = (modelName: string): string => {
   if (!modelName || modelName === 'default') return '';
@@ -55,10 +54,8 @@ const getProviderFromModel = (modelName: string): string => {
 const hasUserKeyForModel = (modelName: string, byokProviders: Array<{ provider: string; hasValidKey: boolean }>): boolean => {
   const provider = getProviderFromModel(modelName);
   if (!provider) return false;
-  
   return byokProviders.some(p => p.provider === provider && p.hasValidKey);
 };
-
 
 // Model recommendations by agent
 const getModelRecommendation = (agentAction: string) => {
@@ -101,7 +98,7 @@ export function ConfigModal({
   // UI state
   const [hasChanges, setHasChanges] = useState(false);
   const [byokModalOpen, setByokModalOpen] = useState(false);
-  
+
   // Modal lifecycle tracking
   const [isInitialOpen, setIsInitialOpen] = useState(false);
 
@@ -109,11 +106,13 @@ export function ConfigModal({
   const [byokData, setByokData] = useState<ByokProvidersData | null>(null);
   const [loadingByok, setLoadingByok] = useState(false);
 
+  // OpenRouter selected models state
+  const [orModels, setOrModels] = useState<Array<{ id: string; name: string; provider: string }>>([]);
+
   // Load BYOK data (filtered by agent constraints)
   const loadByokData = useCallback(async () => {
     try {
       setLoadingByok(true);
-      // Pass agent key to get constraint-filtered models
       const response = await apiClient.getByokProviders(agentConfig.key);
       if (response.success && response.data) {
         setByokData(response.data);
@@ -125,10 +124,22 @@ export function ConfigModal({
     }
   }, [agentConfig.key]);
 
+  // Load selected OpenRouter models
+  const loadOrModels = useCallback(async () => {
+    try {
+      const response = await apiClient.getSelectedOpenRouterModels();
+      if (response.success && response.data?.models) {
+        setOrModels(response.data.models);
+      }
+    } catch (error) {
+      // OR models are optional — silent fail if not available
+      console.error('Failed to load OpenRouter models:', error);
+    }
+  }, []);
+
   // Handle modal open/close lifecycle
   useEffect(() => {
     if (isOpen && !isInitialOpen) {
-      // First time opening - reset everything and load data
       setFormData({
         modelName: userConfig?.name || 'default',
         temperature: userConfig?.temperature?.toString() || '',
@@ -139,11 +150,11 @@ export function ConfigModal({
       setByokModalOpen(false);
       setIsInitialOpen(true);
       loadByokData();
+      loadOrModels();
     } else if (!isOpen && isInitialOpen) {
-      // Modal closed - reset for next time
       setIsInitialOpen(false);
     }
-  }, [isOpen, isInitialOpen, userConfig, loadByokData]);
+  }, [isOpen, isInitialOpen, userConfig, loadByokData, loadOrModels]);
 
   // Load BYOK data when modal opens
   useEffect(() => {
@@ -160,80 +171,100 @@ export function ConfigModal({
       reasoningEffort: userConfig?.reasoning_effort || 'default',
       fallbackModel: userConfig?.fallbackModel || 'default'
     };
-    
     setHasChanges(JSON.stringify(formData) !== JSON.stringify(originalFormData));
   }, [formData, userConfig]);
 
-  // Get unified model list with BYOK status info
+  // Get unified model list: BYOK models + platform models + OR selected models
   const availableModels = useMemo(() => {
-    if (!byokData) return [];
-
-    const models: { value: string; label: string; provider: string; hasUserKey: boolean; byokAvailable: boolean }[] = [];
+    const models: { value: string; label: string; provider: string; hasUserKey: boolean; byokAvailable: boolean; isOpenRouter?: boolean }[] = [];
     const processedModels = new Set<string>();
-    
-    // First, add all BYOK models (they have BYOK capability)
-    Object.values(byokData.modelsByProvider).forEach(providerModels => {
-      providerModels.forEach(model => {
+
+    if (byokData) {
+      // BYOK-capable models
+      Object.values(byokData.modelsByProvider).forEach(providerModels => {
+        providerModels.forEach(model => {
+          const modelStr = model as string;
+          if (!processedModels.has(modelStr)) {
+            const provider = getProviderFromModel(modelStr);
+            const hasUserKey = hasUserKeyForModel(modelStr, byokData.providers);
+            models.push({
+              value: modelStr,
+              label: modelStr,
+              provider,
+              hasUserKey,
+              byokAvailable: true
+            });
+            processedModels.add(modelStr);
+          }
+        });
+      });
+
+      // Platform-only models
+      byokData.platformModels.forEach(model => {
         const modelStr = model as string;
         if (!processedModels.has(modelStr)) {
-          const provider = getProviderFromModel(modelStr);
-          const hasUserKey = hasUserKeyForModel(modelStr, byokData.providers);
-          
           models.push({
             value: modelStr,
             label: modelStr,
-            provider,
-            hasUserKey,
-            byokAvailable: true
+            provider: '',
+            hasUserKey: false,
+            byokAvailable: false
           });
           processedModels.add(modelStr);
         }
       });
-    });
-    
-    // Then, add platform-only models (no BYOK capability)
-    byokData.platformModels.forEach(model => {
-      const modelStr = model as string;
-      if (!processedModels.has(modelStr)) {
+    }
+
+    // OpenRouter selected models — append with "openrouter/" prefix label
+    orModels.forEach(orModel => {
+      if (!processedModels.has(orModel.id)) {
         models.push({
-          value: modelStr,
-          label: modelStr,
-          provider: '',
-          hasUserKey: false,
-          byokAvailable: false
+          value: orModel.id,
+          label: `[OR] ${orModel.name}`,
+          provider: 'openrouter',
+          hasUserKey: true, // OR key is stored in D1, always available
+          byokAvailable: true,
+          isOpenRouter: true
         });
-        processedModels.add(modelStr);
+        processedModels.add(orModel.id);
       }
     });
-    
+
     return models.sort((a, b) => a.label.localeCompare(b.label));
-  }, [byokData]);
+  }, [byokData, orModels]);
 
   // Get current model's BYOK status
   const selectedModelInfo = useMemo(() => {
-    const currentModel = formData.modelName && formData.modelName !== 'default' 
-      ? formData.modelName 
+    const currentModel = formData.modelName && formData.modelName !== 'default'
+      ? formData.modelName
       : '';
-      
+
     if (!currentModel || !byokData) {
-      return { hasUserKey: false, provider: '', requiresBYOK: false, isPlatformModel: true };
+      return { hasUserKey: false, provider: '', requiresBYOK: false, isPlatformModel: true, isOpenRouter: false };
     }
-    
+
+    // Check if this is an OR model
+    const isOpenRouter = orModels.some(m => m.id === currentModel);
+    if (isOpenRouter) {
+      return { hasUserKey: true, provider: 'openrouter', requiresBYOK: false, isPlatformModel: false, isOpenRouter: true };
+    }
+
     // Check if this is a BYOK-capable model
-    const isByokModel = Object.values(byokData.modelsByProvider).some(providerModels => 
+    const isByokModel = Object.values(byokData.modelsByProvider).some(providerModels =>
       providerModels.some(model => model === currentModel)
     );
-    
+
     const provider = getProviderFromModel(currentModel);
     const hasUserKey = hasUserKeyForModel(currentModel, byokData.providers);
-    
+
     return {
       hasUserKey,
       provider,
-      requiresBYOK: isByokModel && !hasUserKey, // Only BYOK-capable models can require keys
-      isPlatformModel: !isByokModel
+      requiresBYOK: isByokModel && !hasUserKey,
+      isPlatformModel: !isByokModel,
+      isOpenRouter: false
     };
-  }, [formData.modelName, byokData]);
+  }, [formData.modelName, byokData, orModels]);
 
   // Create config object from current form state
   const buildCurrentConfig = (): ModelConfigUpdate => {
@@ -253,7 +284,6 @@ export function ConfigModal({
 
   const handleTestWithCurrentConfig = async () => {
     const currentConfig = buildCurrentConfig();
-    // We'll need to update the parent component to handle testing with temporary config
     await onTest(currentConfig);
   };
 
@@ -267,7 +297,6 @@ export function ConfigModal({
   };
 
   const handleByokKeyAdded = () => {
-    // Refresh BYOK data after a key is added
     loadByokData();
   };
 
@@ -320,7 +349,6 @@ export function ConfigModal({
             </Badge>
           </div>
 
-
           {/* Model Selection Section */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -330,7 +358,7 @@ export function ConfigModal({
                   Select primary and fallback models - we'll use your API keys if available
                 </p>
               </div>
-              <Button variant="outline" size="sm" 
+              <Button variant="outline" size="sm"
               onClick={openByokModal}
               disabled // DISABLED: BYOK Disabled for security reasons
               className="gap-2">
@@ -339,7 +367,7 @@ export function ConfigModal({
                 Coming Soon
               </Button>
             </div>
-            
+
             {/* Two-Column Model Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Primary AI Model */}
@@ -353,8 +381,15 @@ export function ConfigModal({
                   systemDefault={defaultConfig?.name}
                   disabled={loadingByok}
                 />
-                
+
                 {/* Model Status Messages */}
+                {selectedModelInfo.isOpenRouter && (
+                  <div className="flex items-center gap-2 text-sm text-purple-600 bg-purple-50 dark:bg-purple-950/20 px-3 py-2 rounded-md border border-purple-200 dark:border-purple-800">
+                    <Check className="h-4 w-4" />
+                    <span>OpenRouter model — uses your OR API key</span>
+                  </div>
+                )}
+
                 {selectedModelInfo.requiresBYOK && (
                   <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 rounded-md border border-amber-200 dark:border-amber-800">
                     <Key className="h-4 w-4" />
@@ -364,7 +399,7 @@ export function ConfigModal({
                     </Button>
                   </div>
                 )}
-                
+
                 {selectedModelInfo.isPlatformModel && formData.modelName && formData.modelName !== 'default' && (
                   <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 dark:bg-blue-950/20 px-3 py-2 rounded-md border border-blue-200 dark:border-blue-800">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -373,8 +408,8 @@ export function ConfigModal({
                     <span>Platform model with usage limits. Consider BYOK for higher usage.</span>
                   </div>
                 )}
-                
-                {formData.modelName && formData.modelName !== 'default' && selectedModelInfo.hasUserKey && (
+
+                {formData.modelName && formData.modelName !== 'default' && selectedModelInfo.hasUserKey && !selectedModelInfo.isOpenRouter && (
                   <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 dark:bg-green-950/20 px-3 py-2 rounded-md border border-green-200 dark:border-green-800">
                     <Check className="h-4 w-4" />
                     <span>Using your {selectedModelInfo.provider} API key</span>
@@ -398,12 +433,11 @@ export function ConfigModal({
             </div>
           </div>
 
-
           <Separator />
 
           {/* BYOK Information */}
           <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 rounded-lg border bg-blue-50/50 border-blue-200">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="h-2 w-2 rounded-full bg-blue-500"></div>
@@ -413,7 +447,7 @@ export function ConfigModal({
                   Models served through our platform with limited quota. No API keys required.
                 </p>
               </div>
-              
+
               <div className="p-4 rounded-lg border bg-green-50/50 border-green-200">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="h-2 w-2 rounded-full bg-green-500"></div>
@@ -421,6 +455,16 @@ export function ConfigModal({
                 </div>
                 <p className="text-xs text-green-700">
                   Your API keys are used for direct billing with providers. Unlimited usage based on your provider account.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-lg border bg-purple-50/50 border-purple-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-2 w-2 rounded-full bg-purple-500"></div>
+                  <h4 className="font-medium text-sm text-purple-900">OpenRouter [OR]</h4>
+                </div>
+                <p className="text-xs text-purple-700">
+                  Models from your OpenRouter account. Select models in OpenRouter Configuration above.
                 </p>
               </div>
             </div>
@@ -431,7 +475,7 @@ export function ConfigModal({
           {/* Parameters */}
           <div className="space-y-4">
             <h4 className="font-medium text-sm">Parameters</h4>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Temperature */}
               <div className="space-y-2">
@@ -498,7 +542,7 @@ export function ConfigModal({
                 </>
               )}
             </Button>
-            
+
             {isUserOverride && (
               <Button
                 variant="ghost"
@@ -516,7 +560,7 @@ export function ConfigModal({
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleSave}
               disabled={!hasChanges}
             >
