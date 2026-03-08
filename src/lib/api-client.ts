@@ -1175,7 +1175,7 @@ class ApiClient {
 		return this.request<AuthProvidersResponseData>('/api/auth/providers');
 	}
 
-/**
+	/**
 	 * Initiate OAuth flow (redirects to provider)
 	 */
 	initiateOAuth(provider: OAuthProvider, redirectUrl?: string): void {
@@ -1189,6 +1189,10 @@ class ApiClient {
 		// Redirect to OAuth provider
 		window.location.href = oauthUrl.toString();
 	}
+
+	// ===============================
+	// OpenRouter API Methods
+	// ===============================
 
 	async saveOpenRouterKey(apiKey: string) {
 		return this.request<{ success: boolean }>('/api/openrouter/save-key', { method: 'POST', body: { apiKey } });
@@ -1209,7 +1213,23 @@ class ApiClient {
 	async saveOpenRouterSelection(selectedIds: string[]) {
 		return this.request<{ success: boolean }>('/api/openrouter/models/selection', { method: 'POST', body: { selectedIds } });
 	}
+
+	async getSelectedOpenRouterModels() {
+		return this.request<{
+			models: Array<{
+				id: string;
+				name: string;
+				provider: string;
+				inputPrice: number | null;
+				outputPrice: number | null;
+				contextLength: number | null;
+				isFree: boolean | number;
+			}>;
+			total: number;
+		}>('/api/openrouter/selected-models');
+	}
 }
+
 // Export singleton instance
 export const apiClient = new ApiClient();
 // Export class for testing/custom instances

@@ -73,7 +73,7 @@ interface OrModel {
   output_price: number | null;
   capabilities: string;
   is_selected: boolean;
-  is_free: boolean;
+  is_free: boolean | number; // D1 returns INTEGER 0/1
   model_created_at: number | null; // Unix timestamp from OpenRouter
 }
 
@@ -214,10 +214,14 @@ function OpenRouterSection() {
   const selectedCount = Object.values(localSelection).filter(Boolean).length;
 
   const formatPrice = (pricePerToken: number | null | undefined) => {
-    if (pricePerToken === null || pricePerToken === undefined || isNaN(pricePerToken)) return 'free';
-    if (pricePerToken === 0) return 'free';
+    if (pricePerToken === null || pricePerToken === undefined || isNaN(pricePerToken)) return '—';
     const per1M = pricePerToken * 1_000_000;
-    return per1M === 0 ? 'free' : `$${per1M.toFixed(2)}/1M`;
+    if (per1M === 0) return '$0/1M';
+    // Show enough decimal places so value isn't rounded to zero
+    if (per1M >= 1)    return `$${per1M.toFixed(2)}/1M`;
+    if (per1M >= 0.01) return `$${per1M.toFixed(3)}/1M`;
+    if (per1M >= 0.001) return `$${per1M.toFixed(4)}/1M`;
+    return `$${per1M.toPrecision(2)}/1M`;
   };
 
   const formatModelDate = (unixTs: number | null | undefined) => {
@@ -441,7 +445,7 @@ function OpenRouterSection() {
                               </div>
                             </div>
                             <div className="flex items-center gap-3 shrink-0 ml-4 text-xs text-text-tertiary">
-                              {model.is_free ? (
+                              {model.is_free == true || model.is_free === 1 ? (
                                 <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200 text-xs">free</Badge>
                               ) : (
                                 <>
