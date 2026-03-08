@@ -126,6 +126,39 @@ export class OpenRouterController extends BaseController {
     }
 
     /**
+     * GET /api/openrouter/selected-models
+     * Returns only models with isSelected = true, formatted for agent config dropdowns.
+     */
+    static async getSelectedModels(
+        _request: Request,
+        env: Env,
+        _ctx: ExecutionContext,
+        _context: RouteContext
+    ): Promise<ControllerResponse<ApiResponse<{ models: unknown[]; total: number }>>> {
+        try {
+            const service = new OpenRouterService(env);
+            const { models } = await service.getModels(true); // selectedOnly = true
+
+            return OpenRouterController.createSuccessResponse({
+                models: models.map(m => ({
+                    id: m.id,
+                    name: m.name,
+                    provider: m.provider,
+                    inputPrice: m.inputPrice,
+                    outputPrice: m.outputPrice,
+                    contextLength: m.contextLength,
+                    isFree: m.isFree,
+                })),
+                total: models.length,
+                message: `${models.length} selected models retrieved`,
+            });
+        } catch (error) {
+            OpenRouterController.logger.error('getSelectedModels error:', error);
+            return OpenRouterController.createErrorResponse('Failed to get selected models', 500);
+        }
+    }
+
+    /**
      * POST /api/openrouter/models/selection
      * Body: { selectedIds: string[] }
      */
