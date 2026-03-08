@@ -15,7 +15,8 @@ import {
 } from 'openai/resources.mjs';
 import { CompletionSignal, Message, MessageContent, MessageRole } from './common';
 import { ToolCallResult, ToolDefinition, toOpenAITool } from '../tools/types';
-import { AgentActionKey, AI_MODEL_CONFIG, AIModelConfig, AIModels, InferenceMetadata, type InferenceRuntimeOverrides } from './config.types';
+import { AgentActionKey, AIModelConfig, AIModels, InferenceMetadata, type InferenceRuntimeOverrides, resolveModelConfig } from './config.types';
+import { OpenRouterService } from '../../database/services/OpenRouterService';
 import { RateLimitService } from '../../services/rate-limit/rateLimits';
 import { getUserConfigurableSettings } from '../../config';
 import { SecurityError, RateLimitExceededError } from 'shared/types/errors';
@@ -288,11 +289,19 @@ export async function getConfigurationForModel(
     let providerForcedOverride: AIGatewayProviders | undefined;
     if (modelConfig.directOverride) {
         switch(modelConfig.provider) {
-            case 'openrouter':
+            case 'openrouter': {
+                const orService = new OpenRouterService(env);
+                const orKey = await orService.getDecryptedApiKey(userId);
+                if (!orKey) {
+                    throw new Error(
+                        'No OpenRouter API key configured. Please add your key in Settings.'
+                    );
+                }
                 return {
                     baseURL: 'https://openrouter.ai/api/v1',
-                    apiKey: env.OPENROUTER_API_KEY,
+                    apiKey: orKey,
                 };
+            }
             case 'google-ai-studio':
                 return {
                     baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
@@ -555,7 +564,7 @@ export async function infer<OutputSchema extends z.AnyZodObject>({
         const userConfig = await getUserConfigurableSettings(env, metadata.userId)
         // Maybe in the future can expand using config object for other stuff like global model configs?
         await RateLimitService.enforceLLMCallsRateLimit(env, userConfig.security.rateLimit, metadata.userId, modelName)
-        const modelConfig = AI_MODEL_CONFIG[modelName as AIModels];
+        const modelConfig = resolveModelConfig(modelName);
 
         const { apiKey, baseURL, defaultHeaders } = await getConfigurationForModel(
             modelConfig,
