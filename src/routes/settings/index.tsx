@@ -158,8 +158,9 @@ function OpenRouterSection() {
     try {
       const res = await apiClient.syncOpenRouterModels();
       if (res.success) {
-        // FIX: Backend may return count, synced, or total — handle all variants
-        const count = res.data?.count ?? res.data?.synced ?? res.data?.total ?? res.data?.models?.length;
+        // FIX: Cast to any to handle backend variants (count, synced, total)
+        const data = res.data as any;
+        const count = data?.count ?? data?.synced ?? data?.total ?? data?.models?.length;
         toast.success(`Synced ${count ?? '?'} models from OpenRouter`);
         await loadModels();
       }
