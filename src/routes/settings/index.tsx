@@ -131,8 +131,9 @@ function OpenRouterSection() {
       if (res.success && res.data?.models) {
         const modelList = res.data.models;
         setModels(modelList);
+        // FIX: D1 returns 0/1 integers for is_selected — cast explicitly to boolean
         const sel: Record<string, boolean> = {};
-        modelList.forEach((m: OrModel) => { sel[m.id] = m.is_selected; });
+        modelList.forEach((m: OrModel) => { sel[m.id] = m.is_selected === true || (m.is_selected as unknown as number) === 1; });
         setLocalSelection(sel);
         // Auto-expand all providers
         const providers = [...new Set(modelList.map((m: OrModel) => m.provider))];
@@ -157,7 +158,9 @@ function OpenRouterSection() {
     try {
       const res = await apiClient.syncOpenRouterModels();
       if (res.success) {
-        toast.success(`Synced ${res.data?.count ?? '?'} models from OpenRouter`);
+        // FIX: Backend may return count, synced, or total — handle all variants
+        const count = res.data?.count ?? res.data?.synced ?? res.data?.total ?? res.data?.models?.length;
+        toast.success(`Synced ${count ?? '?'} models from OpenRouter`);
         await loadModels();
       }
     } catch {
@@ -217,7 +220,6 @@ function OpenRouterSection() {
     if (pricePerToken === null || pricePerToken === undefined || isNaN(pricePerToken)) return '—';
     const per1M = pricePerToken * 1_000_000;
     if (per1M === 0) return '$0/1M';
-    // Show enough decimal places so value isn't rounded to zero
     if (per1M >= 1)    return `$${per1M.toFixed(2)}/1M`;
     if (per1M >= 0.01) return `$${per1M.toFixed(3)}/1M`;
     if (per1M >= 0.001) return `$${per1M.toFixed(4)}/1M`;
