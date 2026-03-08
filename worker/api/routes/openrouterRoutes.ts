@@ -11,15 +11,16 @@ export function setupOpenRouterRoutes(app: Hono<AppEnv>): void {
     const router = new Hono<AppEnv>();
 
     // API Key management
-    router.post('/save-key',        setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.saveKey));
-    router.get('/key-status',       setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.getKeyStatus));
+    router.post('/save-key',            setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.saveKey));
+    router.get('/key-status',           setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.getKeyStatus));
 
     // Model sync + retrieval
-    router.post('/sync-models',     setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.syncModels));
-    router.get('/models',           setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.getModels));
+    router.post('/sync-models',         setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.syncModels));
+    router.get('/models',               setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.getModels));
+    router.get('/selected-models',      setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.getSelectedModels));
 
     // Model selection
-    router.post('/models/selection',setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.updateSelection));
+    router.post('/models/selection',    setAuthLevel(AuthConfig.authenticated), adaptController(OpenRouterController, OpenRouterController.updateSelection));
 
     app.route('/api/openrouter', router);
 }
